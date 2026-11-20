@@ -91,18 +91,28 @@ Website pages and their types.
 
 <img width="369" height="232" alt="image" src="https://github.com/user-attachments/assets/a2d732f4-bb5b-48e6-9fc6-e3e9ac6cd4a3" />
 
-#### `Dim_Date`
+#### `TimeTable`
 Created in Power BI for time analysis (Date, Month, Quarter, Year).
+
+<img width="754" height="652" alt="image" src="https://github.com/user-attachments/assets/89e11cd4-7834-4554-8695-ef920414a629" />
+
+## 🗂️ Data Model (Schema)
+
+The model follows a **star schema**: `sessions` and `pageviews` are the fact tables, and the other tables are dimensions around them.
+
+<img width="1215" height="617" alt="image" src="https://github.com/user-attachments/assets/49c75155-2475-4d26-b5d8-8fcda175e6d1" />
+
 
 ### 🔗 Relationships
 ```
-Dim_Visitor        1 ── N  sessions
-Dim_TrafficSource  1 ── N  sessions
-Dim_Campaign       1 ── N  sessions   (optional — campaign_id can be NULL)
-Dim_Date           1 ── N  sessions
-sessions           1 ── N  pageviews
-Dim_Page           1 ── N  pageviews
+TimeTable        1 ── N  sessions    (Date → started_at)
+visitors         1 ── N  sessions    (visitor_id)
+traffic_sources  1 ── N  sessions    (source_id)
+campaigns        1 ── N  sessions    (campaign_id — optional, can be NULL)
+sessions         1 ── N  pageviews   (sessions_id → session_id)
+pages            1 ── N  pageviews   (page_id)
 ```
+All relationships are **one-to-many** with **single** cross-filter direction.
 
 ---
 
