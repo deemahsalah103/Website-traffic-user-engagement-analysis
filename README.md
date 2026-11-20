@@ -2,8 +2,7 @@
 
 Business Intelligence project analyzing website traffic, user engagement and marketing campaign performance — data cleaning and analysis in **SQL Server**, with interactive dashboards built in **Power BI**.
 
-> **Course:** Data Warehouse (DS339) — Al-Balqa Applied University, Faculty of Artificial Intelligence  
-> **Instructor:** Dr. Jaffar M. Atwan
+
 
 ---
 
