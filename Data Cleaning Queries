@@ -1,0 +1,182 @@
+/* =====================================================================
+   Website Analysis - Data Cleaning & Quality Check Queries
+   Database : Website_Analysis (SQL Server)
+   Purpose  : Verify the data is complete, unique and consistent
+              before building the Power BI dashboard
+   ===================================================================== */
+
+USE Website_Analysis;
+GO
+
+
+/* ---------------------------------------------------------------------
+   1) Row count per table
+   Purpose: confirms all data was imported completely
+   Expected: traffic_sources 8 | campaigs 5 | pages 10 |
+             visitors 150 | sessions 274 | pageviews 685
+   --------------------------------------------------------------------- */
+SELECT 'traffic_sources' AS table_name, COUNT(*) AS row_count FROM dbo.traffic_sources
+UNION ALL SELECT 'campaigs',  COUNT(*) FROM dbo.campaigs
+UNION ALL SELECT 'pages',     COUNT(*) FROM dbo.pages
+UNION ALL SELECT 'visitors',  COUNT(*) FROM dbo.visitors
+UNION ALL SELECT 'sessions',  COUNT(*) FROM dbo.sessions
+UNION ALL SELECT 'pageviews', COUNT(*) FROM dbo.pageviews;
+GO
+
+
+/* ---------------------------------------------------------------------
+   2) Duplicate IDs
+   Purpose: makes sure no table has a repeated primary key
+   Expected: empty result = no duplicates
+   --------------------------------------------------------------------- */
+SELECT 'traffic_sources' AS table_name, source_id AS id, COUNT(*) AS cnt FROM dbo.traffic_sources GROUP BY source_id HAVING COUNT(*) > 1
+UNION ALL SELECT 'campaigs',  campaign_id, COUNT(*) FROM dbo.campaigs  GROUP BY campaign_id HAVING COUNT(*) > 1
+UNION ALL SELECT 'pages',     page_id,     COUNT(*) FROM dbo.pages     GROUP BY page_id     HAVING COUNT(*) > 1
+UNION ALL SELECT 'visitors',  visitor_id,  COUNT(*) FROM dbo.visitors  GROUP BY visitor_id  HAVING COUNT(*) > 1
+UNION ALL SELECT 'sessions',  id,          COUNT(*) FROM dbo.sessions  GROUP BY id          HAVING COUNT(*) > 1
+UNION ALL SELECT 'pageviews', id,          COUNT(*) FROM dbo.pageviews GROUP BY id          HAVING COUNT(*) > 1;
+GO
+
+
+/* ---------------------------------------------------------------------
+   3) Missing values in the main fact table (sessions)
+   Purpose: checks for NULLs in important columns
+   Expected: all 0, except campaign_id (NULL is allowed for
+             organic, referral and direct traffic)
+   --------------------------------------------------------------------- */
+SELECT
+    SUM(CASE WHEN visitor_id   IS NULL THEN 1 ELSE 0 END) AS null_visitor,
+    SUM(CASE WHEN source_id    IS NULL THEN 1 ELSE 0 END) AS null_source,
+    SUM(CASE WHEN started_at   IS NULL THEN 1 ELSE 0 END) AS null_started_at,
+    SUM(CASE WHEN device_type  IS NULL THEN 1 ELSE 0 END) AS null_device,
+    SUM(CASE WHEN country_code IS NULL THEN 1 ELSE 0 END) AS null_country,
+    SUM(CASE WHEN campaign_id  IS NULL THEN 1 ELSE 0 END) AS null_campaign_allowed
+FROM dbo.sessions;
+GO
+
+
+/* ---------------------------------------------------------------------
+   4) Missing values in pageviews
+   Purpose: checks for NULLs in the page-level fact table
+   Expected: all 0
+   --------------------------------------------------------------------- */
+SELECT
+    SUM(CASE WHEN session_id      IS NULL THEN 1 ELSE 0 END) AS null_session,
+    SUM(CASE WHEN page_id         IS NULL THEN 1 ELSE 0 END) AS null_page,
+    SUM(CASE WHEN view_no         IS NULL THEN 1 ELSE 0 END) AS null_view_no,
+    SUM(CASE WHEN viewed_at       IS NULL THEN 1 ELSE 0 END) AS null_viewed_at,
+    SUM(CASE WHEN seconds_on_page IS NULL THEN 1 ELSE 0 END) AS null_seconds
+FROM dbo.pageviews;
+GO
+
+
+/* ---------------------------------------------------------------------
+   5) Referential integrity (orphan records)
+   Purpose: makes sure every foreign key points to an existing row,
+            so relationships work correctly in Power BI
+   Expected: all counts = 0
+   --------------------------------------------------------------------- */
+SELECT 'sessions -> visitors' AS relationship, COUNT(*) AS orphan_rows
+FROM dbo.sessions s
+LEFT JOIN dbo.visitors v ON s.visitor_id = v.visitor_id
+WHERE v.visitor_id IS NULL
+
+UNION ALL
+SELECT 'sessions -> traffic_sources', COUNT(*)
+FROM dbo.sessions s
+LEFT JOIN dbo.traffic_sources t ON s.source_id = t.source_id
+WHERE t.source_id IS NULL
+
+UNION ALL
+SELECT 'sessions -> campaigs', COUNT(*)
+FROM dbo.sessions s
+LEFT JOIN dbo.campaigs c ON s.campaign_id = c.campaign_id
+WHERE s.campaign_id IS NOT NULL AND c.campaign_id IS NULL
+
+UNION ALL
+SELECT 'pageviews -> sessions', COUNT(*)
+FROM dbo.pageviews p
+LEFT JOIN dbo.sessions s ON p.session_id = s.id
+WHERE s.id IS NULL
+
+UNION ALL
+SELECT 'pageviews -> pages', COUNT(*)
+FROM dbo.pageviews p
+LEFT JOIN dbo.pages pg ON p.page_id = pg.page_id
+WHERE pg.page_id IS NULL;
+GO
+
+
+/* ---------------------------------------------------------------------
+   6) Valid ranges
+   Purpose: checks dates are within the study period and
+            time on page is within the expected range (2–420 seconds)
+   Expected: both counts = 0
+   --------------------------------------------------------------------- */
+SELECT 'sessions outside Mar–May 2025' AS check_name, COUNT(*) AS invalid_rows
+FROM dbo.sessions
+WHERE started_at < '2025-03-01' OR started_at >= '2025-06-01'
+
+UNION ALL
+SELECT 'seconds_on_page outside 2–420', COUNT(*)
+FROM dbo.pageviews
+WHERE seconds_on_page < 2 OR seconds_on_page > 420;
+GO
+
+
+/* ---------------------------------------------------------------------
+   7) Invalid category values in visitors
+   Purpose: makes sure device, browser and country use only valid values
+            (no typos like 'Mobile ' or 'Chorme')
+   Expected: empty result
+   --------------------------------------------------------------------- */
+SELECT *
+FROM dbo.visitors
+WHERE device_type NOT IN ('mobile', 'desktop', 'tablet')
+   OR browser NOT IN ('Chrome', 'Safari', 'Firefox', 'Edge', 'Other')
+   OR LEN(country_code) <> 2;
+GO
+
+
+/* ---------------------------------------------------------------------
+   8) Invalid category values in dimension tables
+   Purpose: checks campaign objectives, budgets and source cost types
+            contain only the expected values
+   Expected: both counts = 0
+   --------------------------------------------------------------------- */
+SELECT 'campaigs: invalid objective or budget' AS check_name, COUNT(*) AS invalid_rows
+FROM dbo.campaigs
+WHERE objective NOT IN ('acquisition', 'conversion', 'awareness')
+   OR daily_budget <= 0
+
+UNION ALL
+SELECT 'traffic_sources: invalid cost_type', COUNT(*)
+FROM dbo.traffic_sources
+WHERE cost_type NOT IN ('paid', 'unpaid', 'owned');
+GO
+
+
+/* ---------------------------------------------------------------------
+   9) Logical time order
+   Purpose: a page cannot be viewed before its session started
+   Expected: count = 0
+   --------------------------------------------------------------------- */
+SELECT COUNT(*) AS pageviews_before_session_start
+FROM dbo.pageviews p
+JOIN dbo.sessions s ON p.session_id = s.id
+WHERE p.viewed_at < s.started_at;
+GO
+
+
+/* ---------------------------------------------------------------------
+   10) Consistency between sessions and visitors
+   Purpose: device_type and country_code in sessions are copied from
+            the visitor, so they must match
+   Expected: count = 0
+   --------------------------------------------------------------------- */
+SELECT COUNT(*) AS mismatched_sessions
+FROM dbo.sessions s
+JOIN dbo.visitors v ON s.visitor_id = v.visitor_id
+WHERE s.device_type  <> v.device_type
+   OR s.country_code <> v.country_code;
+GO
