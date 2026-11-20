@@ -131,7 +131,7 @@ CSV Files → SQL Server → Power Query → Data Model → DAX Measures → Pow
 ---
 
 ## 🧾 SQL Queries
-All queries are in [`website_analysis_queries.sql`](website_analysis_queries.sql).
+All queries are in [`Data Cleaning Queries`](Data%20Cleaning%20Queries).
 
 | # | Query | Business Question |
 |---|---|---|
